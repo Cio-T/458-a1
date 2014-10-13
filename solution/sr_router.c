@@ -55,7 +55,7 @@ void sr_init(struct sr_instance* sr)
     pthread_t thread;
 
     pthread_create(&thread, &(sr->attr), sr_arpcache_timeout, sr);
-    
+
     /* Add initialization code here! */
 
 	/* Initialize struct sr_if* sr->if_list*/
@@ -109,7 +109,123 @@ void sr_handlepacket(struct sr_instance* sr,
   printf("*** -> Received packet of length %d \n",len);
 
   /* fill in code here */
-	uint8_t * copy = packet;
+	uint8_t *buf, *mac_src, *mac_dest;
+
+	buf = malloc(len); /*allocate new memory for buf*/
+	memcpy(buf, packet, len); /*let buf be a deep copy of the ethernet packet received*/
+	mac_src = buf->ether_shost;
+	mac_dest = buf->ether_dhost;
+
+	if (ethertype(buf) == ethertype_ip){/*If the ethernet packet received has protocol IP*/
+        uint8_t *ip_buf = buf + sizeof(struct sr_ethernet_hdr);
+        if (validIPPacket(ip_buf)){
+            /*Determine if packet should be forwarded*/
+            struct sr_rt * rt_walker = sr->routing_table;
+            struct sr_rt * best_rt_entry = NULL;
+            int longest_prefix_match = 0;
+            int count = 32;
+            uint32_t cmp_dest = ip_buf->ip_dst;
+            struct in_addr cmp_entry;
+
+            /*find longest prefix match entry in routing table*/
+            while (rt_walker){
+                /*find longest bit match length*/
+                cmp_entry = rt_walker->dest & rt_walker->mask;
+                while (count > longest_prefix_match){
+                    if ((cmp_entry ^ cmp_dest) == 0){
+                        longest_prefix_match = count;
+                        best_rt_entry = rt_walker;
+                    } else {
+                        cmp_dest = cmp_dest >> 1;
+                        cmp_entry = cmp_entry >> 1;
+                        --count;
+                    }
+                }
+                rt_walker = rt_walker->next;
+                count = 32;
+            }
+
+            if (longest_prefix_match == 0){/*no matching entry in routing table*/
+                /*send ICMP Destination net unreachable (type 3, code 0)*/
+            }else if (longest_prefix_match == 32){/*IP dest addr is one of the routers interfaces*/
+                if (ip_buf->ip_p == ip_protocol_icmp){
+                    uint8_t *icmp_buf = ip_buf + ip_buf->ip_hl;
+                    if (icmp_buf->icmp_type == 8){ /*if message is an echo request*/
+                        /*send ICMP Echo reply (type 0)*/
+                    }
+                } else { /*IP packet contains a UDP or TCP payload*/
+                    /*send ICMP Port unreachable (type 3, code 3)*/
+                }
+            }else{
+                /*find next hop ip address based on longest prefix match entry in rtable*/
+                uint32_t next_hop_ip;
+                struct sr_if* best_if_entry;
+                best_if_entry = sr_get_interface(sr, (const &)(best_rt_entry->interface));
+                next_hop_ip = best_if_entry->ip;
+
+                /*deal with ARP*/
+                struct sr_arpentry *next_hop_ip_lookup;
+                if ((next_hop_ip_lookup = sr_arpcache_lookup(sr->cache, next_hop_ip))){
+                    --ip_buf->ip_ttl;
+                    ip_buf->ip_sum = cksum ((const void *)ip_buf, ip_buf->ip_hl);
+                    /*Forward packet*/
+
+                } else {
+                    next_hop_ip_lookup = sr_arpcache_queuereq(sr->cache, next_hop_ip, buf,
+                                                              len, best_if_entry->name);
+                    sr_handle_arpreq(sr->cache, next_hop_ip_lookup);
+                }
+                free(next_hop_ip_lookup);
+
+            }
+        }
+
+	} else if (ethertype(buf) == ethertype_arp){/*If the ethernet packet received is type ARP*/
+        uint8_t *arp_buf = buf + sizeof(struct sr_ethernet_hdr);
+        if (arp_buf->ar_op == arp_op_reply){/*If the ARP packet is ARP reply*/
+            /*call sr_process_arpreply(struct sr_arpcache *cache,
+                                    unsigned char *mac,
+                                    uint32_t ip);*/
+            sr_process_arpreply(sr->cache, arp_buf->ar_sha, arp_buf->ar_sip);
+        } else if (arp_buf->ar_op == arp_op_request){/*If the ARP packet is ARP request*/
+            /*Send ARP reply packet to the sender*/
+
+        } else {
+            printf("Error: undefined ARPtype");
+        }
+	} else {
+	    printf("Error: undefined ethernet type");
+	}
+
+	free(buf);
 
 }/* end sr_ForwardPacket */
+
+
+int validIPPacket(uint8_t *ip_buf){
+    uint16_t calc_sum = cksum ((const void *)ip_buf, ip_buf->ip_hl);
+    if (ip_buf->ip_v != 4) {
+        printf("IP version is not 4\n");
+        return 0;
+    }
+    if (ip_buf->ip_hl < 5) {
+        printf("IP header length is %d\n", ip_buf->ip_hl);
+        return 0;
+    }
+    if (ip_buf->ip_len < ip_buf->ip_hl*2) {
+        printf("ERROR: Total length is less than header length");
+        return 0;
+    }
+    if (ip_buf->ip_sum != calc_sum){
+        /*Drop packet*/
+        printf("checksum_ip=%d, checksum_calc = %d\n", ip_buf->ip_sum, calc_sum);
+        return 0;
+    }
+    if (ip_buf->ip_ttl == 0){
+        printf("ERROR: Time to live is 0\n");
+        /*send ICMP Time exceeded (type 11, code 0)*/
+        return 0;
+    }
+    retun 1;
+}
 
