@@ -116,39 +116,21 @@ void sr_handlepacket(struct sr_instance* sr,
 	mac_src = buf->ether_shost;
 	mac_dest = buf->ether_dhost;
 
-	if (ethertype(buf) == ethertype_ip){/*If the ethernet packet received has protocol IP*/
+    if (packetIsToSelf()){
+
+    } else if (ethertype(buf) == ethertype_ip){/*If the ethernet packet received has protocol IP*/
         uint8_t *ip_buf = buf + sizeof(struct sr_ethernet_hdr);
         if (validIPPacket(ip_buf)){
+
+
             /*Determine if packet should be forwarded*/
-            struct sr_rt * rt_walker = sr->routing_table;
-            struct sr_rt * best_rt_entry = NULL;
-            int longest_prefix_match = 0;
-            int count = 32;
-            uint32_t cmp_dest = ip_buf->ip_dst;
-            struct in_addr cmp_entry;
+            struct sr_rt * best_rt_entry = getBestRtEntry(sr->routing_table, ip_buf);
 
-            /*find longest prefix match entry in routing table*/
-            while (rt_walker){
-                /*find longest bit match length*/
-                cmp_entry = rt_walker->dest & rt_walker->mask;
-                while (count > longest_prefix_match){
-                    if ((cmp_entry ^ cmp_dest) == 0){
-                        longest_prefix_match = count;
-                        best_rt_entry = rt_walker;
-                    } else {
-                        cmp_dest = cmp_dest >> 1;
-                        cmp_entry = cmp_entry >> 1;
-                        --count;
-                    }
-                }
-                rt_walker = rt_walker->next;
-                count = 32;
-            }
-
-            if (longest_prefix_match == 0){/*no matching entry in routing table*/
+            if (!best_rt_entry){/*no matching entry in routing table*/
                 /*send ICMP Destination net unreachable (type 3, code 0)*/
             }else if (longest_prefix_match == 32){/*IP dest addr is one of the routers interfaces*/
                 if (ip_buf->ip_p == ip_protocol_icmp){
+
                     uint8_t *icmp_buf = ip_buf + ip_buf->ip_hl;
                     if (icmp_buf->icmp_type == 8){ /*if message is an echo request*/
                         /*send ICMP Echo reply (type 0)*/
@@ -229,3 +211,34 @@ int validIPPacket(uint8_t *ip_buf){
     retun 1;
 }
 
+struct sr_rt * getBestRtEntry(struct sr_rt* routing_table, uint8_t *ip_buf){
+    struct sr_rt * rt_walker = routing_table;
+    struct sr_rt * best_rt_entry = NULL;
+    int longest_prefix_match = 0;
+    int count = 32;
+    uint32_t cmp_dest = ip_buf->ip_dst;
+    struct in_addr cmp_entry;
+
+    /*find longest prefix match entry in routing table*/
+    while (rt_walker){
+        /*find longest bit match length*/
+        cmp_entry = rt_walker->dest & rt_walker->mask;
+        while (count > longest_prefix_match){
+            if ((cmp_entry ^ cmp_dest) == 0){
+                longest_prefix_match = count;
+                best_rt_entry = rt_walker;
+            } else {
+                cmp_dest = cmp_dest >> 1;
+                cmp_entry = cmp_entry >> 1;
+                --count;
+            }
+        }
+        rt_walker = rt_walker->next;
+        count = 32;
+    }
+    return best_rt_entry;
+}
+
+int packetIsToSelf(){
+    return 0;
+}
