@@ -108,6 +108,7 @@ int main(int argc, char **argv)
     sr_init_instance(&sr);
 
     /* -- set up routing table from file -- */
+	/*set sr.template*/
     if(template == NULL) {
         sr.template[0] = '\0';
         sr_load_rt_wrap(&sr, rtable);
@@ -115,15 +116,19 @@ int main(int argc, char **argv)
     else
         strncpy(sr.template, template, 30);
 
+	/*set sr.topo_id*/
     sr.topo_id = topo;
+	/*set sr.host*/
     strncpy(sr.host,host,32);
 
+	/*set sr.user*/
     if(! user )
     { sr_set_user(&sr); }
     else
     { strncpy(sr.user, user, 32); }
 
     /* -- set up file pointer for logging of raw packets -- */
+	/*set sr.logfile*/
     if(logfile != 0)
     {
         sr.logfile = sr_dump_open(logfile,0,PACKET_DUMP_SIZE);
@@ -142,11 +147,13 @@ int main(int argc, char **argv)
         Debug("Requesting topology %d\n", topo);
 
     /* connect to server and negotiate session */
+	/*Initialize sr.sr_addr and sr.sockfd*/
     if(sr_connect_to_server(&sr,port,server) == -1)
     {
         return 1;
     }
 
+	/*Initialize sr.routing_table*/
     if(template != NULL && strcmp(rtable, "rtable.vrhost") == 0) { /* we've recv'd the rtable now, so read it in */
         Debug("Connected to new instantiation of topology template %s\n", template);
         sr_load_rt_wrap(&sr, "rtable.vrhost");
@@ -157,6 +164,7 @@ int main(int argc, char **argv)
     }
 
     /* call router init (for arp subsystem etc.) */
+	/*Initialize sr.if_list*/
     sr_init(&sr);
 
     /* -- whizbang main loop ;-) */

@@ -12,10 +12,9 @@
  **********************************************************************/
 
 #include <stdio.h>
+#include <assert.h>
 #include <stdlib.h>
 #include <string.h>
-#include <assert.h>
-
 
 #include "sr_if.h"
 #include "sr_rt.h"
@@ -32,18 +31,10 @@
  *
  *---------------------------------------------------------------------*/
 
-#define LINE_SIZE 1024
-
 void sr_init(struct sr_instance* sr)
 {
     /* REQUIRES */
     assert(sr);
-
-	FILE * fp;
-	unsigned long ip_addr;
-	char if_name[30];
-	char *token;
-	char buf[LINE_SIZE];
 
     /* Initialize cache and cache cleanup thread */
     sr_arpcache_init(&(sr->cache));
@@ -55,29 +46,9 @@ void sr_init(struct sr_instance* sr)
     pthread_t thread;
 
     pthread_create(&thread, &(sr->attr), sr_arpcache_timeout, sr);
-
+    
     /* Add initialization code here! */
 
-	/* Initialize struct sr_if* sr->if_list*/
-/*	fp = fopen("IP_CONFIG", "r");
-
-	if (fp == NULL){
-		printf ("Error opening IP_CONFIG\n\n'");
-	} else {
-		while (fgets(buf, LINE_SIZE, fp)){
-			printf("Interface %s\n", buf);
-			sscanf(buf, "%s %lu", if_name, &ip_addr);
-			printf("Interface has name %s and IP address %lu\n",
-                                (const char*)if_name, ip_addr);
-			sr_add_interface(sr, (const char *)if_name);
-			sr_set_ether_ip(sr, (uint32_t)ip_addr);
-		}
-		fclose(fp);
-	}
-
-*/
-	/*debug sr_init*/
-	sr_print_if_list(sr);
 } /* -- sr_init -- */
 
 /*---------------------------------------------------------------------
@@ -109,66 +80,66 @@ void sr_handlepacket(struct sr_instance* sr,
   printf("*** -> Received packet of length %d \n",len);
 
   /* fill in code here */
-	uint8_t *buf, *mac_src, *mac_dest;
 
-	buf = malloc(len); /*allocate new memory for buf*/
+	uint8_t *buf;
+	buf = (uint8_t *)malloc(len); /*allocate new memory for buf*/
 	memcpy(buf, packet, len); /*let buf be a deep copy of the ethernet packet received*/
-	mac_src = buf->ether_shost;
-	mac_dest = buf->ether_dhost;
+	
+	print_hdrs(buf, len);
 
-    if (packetIsToSelf(sr, buf, interface)){
+    if (ethertype(buf) == ethertype_ip){/*If the ethernet packet received has protocol IP*/
+        struct sr_ip_hdr *ip_buf = (struct sr_ip_hdr *)(buf + sizeof(struct sr_ethernet_hdr));
+		if (!packetIsToSelf(sr, ip_buf, NULL, interface)){
+	        if (validIPPacket(ip_buf)){
+    	        /*Determine if packet should be forwarded*/
+        	    struct sr_rt* best_rt_entry = getBestRtEntry(sr->routing_table, ip_buf);
 
-    } else if (ethertype(buf) == ethertype_ip){/*If the ethernet packet received has protocol IP*/
-        uint8_t *ip_buf = buf + sizeof(struct sr_ethernet_hdr);
-        if (validIPPacket(ip_buf)){
-            /*Determine if packet should be forwarded*/
-            struct sr_rt * best_rt_entry = getBestRtEntry(sr->routing_table, ip_buf);
+            	if (!best_rt_entry){/*no matching entry in routing table*/
+                	/*send ICMP Destination net unreachable (type 3, code 0)*/
 
-            if (!best_rt_entry){/*no matching entry in routing table*/
-                /*send ICMP Destination net unreachable (type 3, code 0)*/
+	            }else{
+	
+    	        }
+	        }
+		}
+	
 
-            }else{
-                /*find next hop ip address based on longest prefix match entry in rtable*/
-                uint32_t next_hop_ip = best_rt_entry->gw; /*need type cast from in_addr to uint32_t*/
+	} else if (ethertype(buf) == ethertype_arp){/*If the ethernet packet received is type ARP*/
+        struct sr_arp_hdr *arp_buf = (struct sr_arp_hdr *)(buf + sizeof(struct sr_ethernet_hdr));
+		if (packetIsToSelf(sr, NULL, arp_buf, interface)){
+    	   	if (arp_buf->ar_op == arp_op_reply){/*If the ARP packet is ARP reply*/
+        	   	/*call sr_process_arpreply(struct sr_arpcache *cache,
+        	                           unsigned char *mac,
+            	                       uint32_t ip);*/
+ 	          	sr_process_arpreply(&(sr->cache), arp_buf->ar_sha, arp_buf->ar_sip);
+   			} else if (arp_buf->ar_op == arp_op_request){/*If the ARP packet is ARP request*/
+   	    	    /*Send ARP reply packet to the sender*/
 
-                /*deal with ARP*/
-                struct sr_arpentry *next_hop_ip_lookup;
-                if ((next_hop_ip_lookup = sr_arpcache_lookup(sr->cache, next_hop_ip))){
-                    --ip_buf->ip_ttl;
-                    ip_buf->ip_sum = cksum ((const void *)ip_buf, ip_buf->ip_hl);
-                    /*Forward packet*/
+	     	} else {
+   		        printf("Error: undefined ARPtype. Dropping packet.");
+				/*drop packet*/
 
-                } else {
-                    next_hop_ip_lookup = sr_arpcache_queuereq(sr->cache, next_hop_ip, buf,
-                                                              len, best_if_entry->name);
-                    sr_handle_arpreq(sr->cache, next_hop_ip_lookup);
-                }
-                free(next_hop_ip_lookup);
-
-            }
-        }
-
+	        }
+		}
 	} else {
 	    printf("Error: undefined ethernet type. Dropping packet.");
 	}
 
 	free(buf);
-
 }/* end sr_ForwardPacket */
 
-
-int validIPPacket(uint8_t *ip_buf){
+int validIPPacket(struct sr_ip_hdr *ip_buf){
     uint16_t calc_sum = cksum ((const void *)ip_buf, ip_buf->ip_hl);
     if (ip_buf->ip_v != 4) {
         printf("IP version is not 4\n");
         return 0;
     }
-    if (ip_buf->ip_hl < 5) {
+    if (ip_buf->ip_hl < 4) {
         printf("IP header length is %d\n", ip_buf->ip_hl);
         return 0;
     }
-    if (ip_buf->ip_len < ip_buf->ip_hl*2) {
-        printf("ERROR: Total length is less than header length");
+    if (ip_buf->ip_len < 5) {
+        printf("ERROR: Total length is less than IP header length + UDP header length");
         return 0;
     }
     if (ip_buf->ip_sum != calc_sum){
@@ -181,24 +152,24 @@ int validIPPacket(uint8_t *ip_buf){
         /*send ICMP Time exceeded (type 11, code 0)*/
         return 0;
     }
-    retun 1;
+    return 1;
 }
 
-struct sr_rt * getBestRtEntry(struct sr_rt* routing_table, uint8_t *ip_buf){
-    struct sr_rt * rt_walker = routing_table;
-    struct sr_rt * best_rt_entry = NULL;
-    int longest_prefix_match = 0;
+struct sr_rt* getBestRtEntry(struct sr_rt* routing_table, struct sr_ip_hdr *ip_buf){
+    struct sr_rt* best_rt_entry = (struct sr_rt*)NULL;
+    struct sr_rt* rt_walker = routing_table;
+    int longest_prefix_count = 0;
     int count = 32;
-    uint32_t cmp_dest = ip_buf->ip_dst;
-    struct in_addr cmp_entry;
+    uint32_t cmp_dest, cmp_entry;
+	cmp_dest = ip_buf->ip_dst;
 
     /*find longest prefix match entry in routing table*/
-    while (rt_walker){
+    while (rt_walker && longest_prefix_count < 32){
         /*find longest bit match length*/
-        cmp_entry = rt_walker->dest & rt_walker->mask;
-        while (count > longest_prefix_match){
+        cmp_entry = rt_walker->dest.s_addr & rt_walker->mask.s_addr;
+        while (count > longest_prefix_count){
             if ((cmp_entry ^ cmp_dest) == 0){
-                longest_prefix_match = count;
+                longest_prefix_count = count;
                 best_rt_entry = rt_walker;
             } else {
                 cmp_dest = cmp_dest >> 1;
@@ -212,48 +183,14 @@ struct sr_rt * getBestRtEntry(struct sr_rt* routing_table, uint8_t *ip_buf){
     return best_rt_entry;
 }
 
-int * packetIsToSelf(struct sr_instance* sr, uint8_t * buf, char* if_name){
-	uint8_t *new_buf = NULL;	
+int packetIsToSelf(struct sr_instance* sr, struct sr_ip_hdr *ip_buf, struct sr_arp_hdr *arp_buf, char* if_name){
 	int self_flag = 0;
+	
+	if (ip_buf){
+		printf("is ip packet to self\n");
+	} else if (arp_buf){
+		printf("is arp packet to self\n");
 
-    	if (ethertype(buf) == ethertype_ip){/*If the ethernet packet received has protocol IP*/
-        	new_buf = buf + sizeof(struct sr_ethernet_hdr);
-
-            if (new_buf->ip_p == ip_protocol_icmp){
-
-            	uint8_t *icmp_buf = new_buf + new_buf->ip_hl;
-             	if (icmp_buf->icmp_type == 8){ /*if message is an echo request*/
-                	/*send ICMP Echo reply (type 0)*/
-
-                } else {
-					/*drop packet*/
-
-				}
-            } else { /*IP packet contains a UDP or TCP payload*/
-                /*send ICMP Port unreachable (type 3, code 3)*/
-
-            }
-
-		} else if (ethertype(buf) == ethertype_arp){/*If the ethernet packet received is type ARP*/
-    	    new_buf = buf + sizeof(struct sr_ethernet_hdr);
-        	if (new_buf->ar_op == arp_op_reply){/*If the ARP packet is ARP reply*/
-            	/*call sr_process_arpreply(struct sr_arpcache *cache,
-                                    unsigned char *mac,
-                                    uint32_t ip);*/
-            	sr_process_arpreply(sr->cache, new_buf->ar_sha, new_buf->ar_sip);
-  	   		} else if (new_buf->ar_op == arp_op_request){/*If the ARP packet is ARP request*/
-    	        /*Send ARP reply packet to the sender*/
-
-	     	} else {
-    	        printf("Error: undefined ARPtype. Dropping packet.");
-				/*drop packet*/
-
-	        }
-		} else {
-	    	printf("Error: unrecognized ethernet type to router interface. Dropping packet.");
-			/*drop packet*/
-
-		}
-
+	} 
     return self_flag;
 }

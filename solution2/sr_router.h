@@ -68,11 +68,6 @@ int sr_read_from_server(struct sr_instance* );
 void sr_init(struct sr_instance* );
 void sr_handlepacket(struct sr_instance* , uint8_t * , unsigned int , char* );
 
-/*self-defined helper functions in sr_router.c*/
-int validIPPacket(struct sr_ip_hdr *ip_buf);
-struct sr_rt* getBestRtEntry(struct sr_rt* routing_table, struct sr_ip_hdr *ip_buf);
-int packetIsToSelf(struct sr_instance* sr, struct sr_ip_hdr *ip_buf, struct sr_arp_hdr *arp_buf, char* if_name);
-
 /* -- sr_if.c -- */
 void sr_add_interface(struct sr_instance* , const char* );
 void sr_set_ether_ip(struct sr_instance* , uint32_t );
