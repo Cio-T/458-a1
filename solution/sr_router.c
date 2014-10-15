@@ -84,7 +84,15 @@ void sr_handlepacket(struct sr_instance* sr,
 	uint8_t *buf;
 	buf = (uint8_t *)malloc(len); /*allocate new memory for buf*/
 	memcpy(buf, packet, len); /*let buf be a deep copy of the ethernet packet received*/
-	
+
+	/*switch the src and dest MAC address in buf (prepare to forward)*/
+	sr_ethernet_hdr_t *ethe_header = (sr_ethernet_hdr_t *)buf;
+	int i;
+	for (i=0; i<ETHER_ADDR_LEN; ++i){
+		ethe_header->ether_shost[i] = ethe_header->ether_dhost[i];	
+		ethe_header->ether_dhost[i] = 0;	
+	}
+
 	print_hdrs(buf, len);
 
     if (ethertype(buf) == ethertype_ip){/*If the ethernet packet received has protocol IP*/
@@ -98,24 +106,43 @@ void sr_handlepacket(struct sr_instance* sr,
                 	/*send ICMP Destination net unreachable (type 3, code 0)*/
 
 	            }else{
+					/*calculate the new ttl and checksum field of ip packet*/
+	                --ip_buf->ip_ttl;
+    	            ip_buf->ip_sum = cksum ((const void *)ip_buf, ip_buf->ip_hl);
+
+        	        /*find next hop ip address based on longest prefix match entry in rtable*/
+            	    uint32_t next_hop_ip = best_rt_entry->gw.s_addr; /*need type cast from in_addr to uint32_t*/
+
+    	            /*deal with ARP*/
+        	        struct sr_arpentry *next_hop_ip_lookup;
+            	    if ((next_hop_ip_lookup = sr_arpcache_lookup(&(sr->cache), next_hop_ip))){
+        	            /*Forward packet*/
 	
+    	            } else {
+        	            struct sr_arpreq *req = sr_arpcache_queuereq(&(sr->cache), next_hop_ip, buf,
+                                                              len, interface);
+            	        sr_handle_arpreq(&(sr->cache), req);
+   	             	}
+
+    	            free(next_hop_ip_lookup);
+
     	        }
 	        }
 		}
-	
 
 	} else if (ethertype(buf) == ethertype_arp){/*If the ethernet packet received is type ARP*/
         struct sr_arp_hdr *arp_buf = (struct sr_arp_hdr *)(buf + sizeof(struct sr_ethernet_hdr));
 		if (packetIsToSelf(sr, NULL, arp_buf, interface)){
-    	   	if (arp_buf->ar_op == arp_op_reply){/*If the ARP packet is ARP reply*/
+    	   	if (ntohs(arp_buf->ar_op) == arp_op_reply){/*If the ARP packet is ARP reply*/
         	   	/*call sr_process_arpreply(struct sr_arpcache *cache,
         	                           unsigned char *mac,
             	                       uint32_t ip);*/
  	          	sr_process_arpreply(&(sr->cache), arp_buf->ar_sha, arp_buf->ar_sip);
-   			} else if (arp_buf->ar_op == arp_op_request){/*If the ARP packet is ARP request*/
+   			} else if (ntohs(arp_buf->ar_op) == arp_op_request){/*If the ARP packet is ARP request*/
    	    	    /*Send ARP reply packet to the sender*/
 
 	     	} else {
+				printf("arp_op is %hu\n", arp_buf->ar_op);
    		        printf("Error: undefined ARPtype. Dropping packet.");
 				/*drop packet*/
 
@@ -138,7 +165,7 @@ int validIPPacket(struct sr_ip_hdr *ip_buf){
         printf("IP header length is %d\n", ip_buf->ip_hl);
         return 0;
     }
-    if (ip_buf->ip_len < 5) {
+    if (ntohl(ip_buf->ip_len) < 5) {
         printf("ERROR: Total length is less than IP header length + UDP header length");
         return 0;
     }
@@ -185,11 +212,18 @@ struct sr_rt* getBestRtEntry(struct sr_rt* routing_table, struct sr_ip_hdr *ip_b
 
 int packetIsToSelf(struct sr_instance* sr, struct sr_ip_hdr *ip_buf, struct sr_arp_hdr *arp_buf, char* if_name){
 	int self_flag = 0;
+	struct sr_if* get_if = sr_get_interface(sr, if_name);
 	
 	if (ip_buf){
-		printf("is ip packet to self\n");
+		if (ip_buf->ip_dst == get_if->ip){
+			self_flag = 1;
+			printf("is ip packet to self\n");
+		}
 	} else if (arp_buf){
-		printf("is arp packet to self\n");
+		if (arp_buf->ar_tip == get_if->ip){
+			self_flag = 1;
+			printf("is arp packet to self\n");
+		}
 
 	} 
     return self_flag;
