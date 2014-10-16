@@ -69,9 +69,16 @@ void sr_init(struct sr_instance* );
 void sr_handlepacket(struct sr_instance* , uint8_t * , unsigned int , char* );
 
 /*self-defined helper functions in sr_router.c*/
-int validIPPacket(struct sr_ip_hdr *ip_buf);
-struct sr_rt* getBestRtEntry(struct sr_rt* routing_table, struct sr_ip_hdr *ip_buf);
-int packetIsToSelf(struct sr_instance* sr, struct sr_ip_hdr *ip_buf, struct sr_arp_hdr *arp_buf, char* if_name);
+int validIPPacket(struct sr_ip_hdr*);
+struct sr_rt* getBestRtEntry(struct sr_rt*, struct sr_ip_hdr*);
+int packetIsToSelf(struct sr_instance*, uint8_t*, int, char*);
+
+/*self-defined helper functions in sr_router.c for preparing packets to send*/
+void prepIPPacket(struct sr_ip_hdr*);
+void prepARPPacket(uint8_t*, unsigned char*);
+void prepICMPPacket();
+void prepEthePacketFwd(uint8_t*, uint8_t*);
+void prepEthePacketBck(uint8_t*);
 
 /* -- sr_if.c -- */
 void sr_add_interface(struct sr_instance* , const char* );

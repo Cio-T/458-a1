@@ -40,6 +40,7 @@ void sr_handle_arpreq(struct sr_arpcache *cache, struct sr_arpreq *req){
 			while (this_pac){
         		/*TO DO: send icmp host unreachable to source addr of this_pac*/
                 /*i.e. send ICMP Destination host unreachable (type 3, code 1)*/
+
 				this_pac = this_pac->next;
 			}
             sr_arpreq_destroy(cache, req);
