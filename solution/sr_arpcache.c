@@ -11,7 +11,7 @@
 #include "sr_if.h"
 #include "sr_protocol.h"
 
-unsigned char broadcast_addr[ETHER_ADDR_LEN] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};	 
+unsigned char broadcast_addr[ETHER_ADDR_LEN] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
 
 /*
   This function gets called every second. For each request sent out, we keep
@@ -42,12 +42,13 @@ void sr_handle_arpreq(struct sr_instance* sr, struct sr_arpreq *req){
         		/*TO DO: send icmp host unreachable to source addr of this_pac*/
                 /*i.e. send ICMP Destination host unreachable (type 3, code 1)*/
 		/*		makeAndSendICMP(icmp3_len, this_pac->buf, sr, this_pac->iface, 3, 1);
-*/	
+*/
 				this_pac = this_pac->next;
 			}
             sr_arpreq_destroy(cache, req);
 		} else {
             /*TO DO: send arp request*/
+            /*COMPLETED*/
 			sendARPReq(arp_len, broadcast_addr, req->ip, sr, this_pac->iface);
             req->sent = now;
 			++req->times_sent;
@@ -70,6 +71,7 @@ void sr_process_arpreply(struct sr_instance* sr,
 		this_pac = req->packets;
 		while (this_pac){
        		/*TO DO: send all packets on the req->packets linked list*/
+       		/*COMPLETED - but not tested*/
             prepEthePacketFwd(this_pac->buf, mac);
             if (sr_send_packet(sr, this_pac->buf, this_pac->len, this_pac->iface) < 0)
                 printf("Error sending packets upon receiving ARP reply.");

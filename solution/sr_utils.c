@@ -5,9 +5,9 @@
 #include "sr_utils.h"
 
 uint16_t calculate_IP_checksum(struct sr_ip_hdr* ip_hdr) {
-	uint32_t sum = 0;	
+	uint32_t sum = 0;
 	uint16_t current_checksum = ip_hdr->ip_sum;
-	ip_hdr->ip_sum=0; 
+	ip_hdr->ip_sum=0;
 	uint16_t* buffer = (uint16_t*) ip_hdr;
 	int count = (int)(ip_hdr->ip_hl* 2);
 	while (count--) {
@@ -18,8 +18,33 @@ uint16_t calculate_IP_checksum(struct sr_ip_hdr* ip_hdr) {
 			sum++;
 		}
 	}
-	ip_hdr->ip_sum=current_checksum; 
+	ip_hdr->ip_sum=current_checksum;
 	return ~(sum & 0xFFFF);
+}
+
+int validateICMPChecksum(struct sr_icmp_hdr* icmp_hdr, int size){
+    uint16_t calc_sum = calculate_ICMP_checksum(icmp_hdr, size);
+    if (icmp_hdr->icmp_sum == calc_sum){
+        return 1;
+    }
+    printf("original ICMP sum is %d, and calculated ICMP sum is %d\n",
+           icmp_hdr->icmp_sum, calc_sum);
+    return 0;
+}
+
+uint16_t calculate_ICMP_checksum(struct sr_icmp_hdr* icmp_hdr, int size) {
+    uint32_t sum = 0;
+    uint16_t current_checksum = icmp_hdr->icmp_sum;
+    icmp_hdr->icmp_sum = 0;
+    uint16_t* tmp = (uint16_t *) icmp_hdr;
+
+    for (int i = 0; i < size/2; i++) sum = sum + tmp[i];
+
+    sum = (sum >> 16) + (sum & 0xFFFF);
+    sum = sum + (sum >> 16);
+
+    icmp_hdr->icmp_sum = current_checksum;
+    return ~sum;
 }
 
 uint16_t cksum (const void *_data, int len) {
