@@ -91,8 +91,13 @@ void sr_handlepacket(struct sr_instance* sr,
         struct sr_ip_hdr *ip_buf = (struct sr_ip_hdr *)(buf + sizeof(struct sr_ethernet_hdr));
 	    if (validIPPacket(ip_buf)){
 			if (packetIsToSelf(sr, buf, 1, interface)){
-				/*check if packet is ICMP echo request (type 8) */
-				/*if yes, send back ICMP reply (type 0)*/
+				if (ip_buf->ip_p == ip_protocol_icmp) {
+					printf("IP protocol is ICMP\n");
+					/*check if packet is ICMP echo request (type 8) */
+					/*if yes, send back ICMP reply (type 0)*/
+				} else {
+					printf("IP protocol is %d\n", ip_buf->ip_p);
+				}
 
 			} else {
     	        /*Determine if packet should be forwarded*/
@@ -111,7 +116,10 @@ void sr_handlepacket(struct sr_instance* sr,
         	        struct sr_arpentry *next_hop_ip_lookup;
             	    if ((next_hop_ip_lookup = sr_arpcache_lookup(&(sr->cache), next_hop_ip))){
         	            /*Forward packet*/
-	
+						uint8_t *dest_mac_addr = next_hop_ip_lookup->mac;
+						prepEthePacketFwd(buf, dest_mac_addr);
+						if (sr_send_packet(sr, buf, len, interface) < 0) 
+							printf("Error forwarding IP packet reply.");
     	            } else {
         	            struct sr_arpreq *req = sr_arpcache_queuereq(&(sr->cache), next_hop_ip, buf,
                                                               len, interface);
@@ -155,7 +163,8 @@ void sr_handlepacket(struct sr_instance* sr,
 }/* end sr_ForwardPacket */
 
 int validIPPacket(struct sr_ip_hdr *ip_buf){
-    uint16_t calc_sum = cksum ((const void *)ip_buf, ip_buf->ip_hl);
+    uint16_t calc_sum = calculate_IP_checksum(ip_buf);
+    printf("IP header length is %d\n", ip_buf->ip_hl);
     if (ip_buf->ip_v != 4) {
         printf("IP version is not 4\n");
         return 0;
@@ -170,7 +179,7 @@ int validIPPacket(struct sr_ip_hdr *ip_buf){
     }
     if (ip_buf->ip_sum != calc_sum){
         /*Drop packet*/
-        printf("checksum_ip=%d, checksum_calc = %d\n", ip_buf->ip_sum, calc_sum);
+        printf("ERROR: checksum_ip=%d, checksum_calc = %d\n", ip_buf->ip_sum, calc_sum);
         return 0;
     }
     if (ip_buf->ip_ttl == 0){
@@ -179,6 +188,7 @@ int validIPPacket(struct sr_ip_hdr *ip_buf){
 
         return 0;
     }
+	printf("IP packet is valid\n");
     return 1;
 }
 
@@ -213,16 +223,22 @@ struct sr_rt* getBestRtEntry(struct sr_rt* routing_table, struct sr_ip_hdr *ip_b
 int packetIsToSelf(struct sr_instance* sr, uint8_t *buf, int isIP, char* if_name){
 	int self_flag = 0;
 	unsigned char *tmp_ptr;
-	struct sr_if* get_if = sr_get_interface(sr, if_name);
+	struct sr_if* get_if;
 	
 	if (isIP){
         struct sr_ip_hdr *ip_buf = (struct sr_ip_hdr *)(buf + sizeof(struct sr_ethernet_hdr));
-		if (ip_buf->ip_dst == get_if->ip){
-			self_flag = 1;
-			printf("is ip packet to self\n");
+		get_if = sr->if_list;
+		while(get_if) {
+			if (ip_buf->ip_dst == get_if->ip){
+				self_flag = 1;
+				printf("is ip packet to self\n");
+			}else{
+				get_if = get_if->next;
+			}
 		}
 	} else{
         struct sr_arp_hdr *arp_buf = (struct sr_arp_hdr *)(buf + sizeof(struct sr_ethernet_hdr));
+		get_if = sr_get_interface(sr, if_name);
 		if (arp_buf->ar_tip == get_if->ip){
 			self_flag = 1;
 			printf("is arp packet to self\n");
@@ -239,7 +255,7 @@ int packetIsToSelf(struct sr_instance* sr, uint8_t *buf, int isIP, char* if_name
 void prepIPPacket(struct sr_ip_hdr *ip_buf){
 	/*calculate the new ttl and checksum field of ip packet*/
 	--ip_buf->ip_ttl;
-    ip_buf->ip_sum = cksum ((const void *)ip_buf, ip_buf->ip_hl);
+    ip_buf->ip_sum = calculate_IP_checksum(ip_buf);
 }
 
 void prepARPPacket(uint8_t *buf, unsigned char *dest_mac_addr){

@@ -4,6 +4,23 @@
 #include "sr_protocol.h"
 #include "sr_utils.h"
 
+uint16_t calculate_IP_checksum(struct sr_ip_hdr* ip_hdr) {
+	uint32_t sum = 0;	
+	uint16_t current_checksum = ip_hdr->ip_sum;
+	ip_hdr->ip_sum=0; 
+	uint16_t* buffer = (uint16_t*) ip_hdr;
+	int count = (int)(ip_hdr->ip_hl* 2);
+	while (count--) {
+		sum += *buffer++;
+		if (sum & 0xFFFF0000) {
+			/* carry occurred, so wrap around */
+			sum &= 0xFFFF;
+			sum++;
+		}
+	}
+	ip_hdr->ip_sum=current_checksum; 
+	return ~(sum & 0xFFFF);
+}
 
 uint16_t cksum (const void *_data, int len) {
   const uint8_t *data = _data;

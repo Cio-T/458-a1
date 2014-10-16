@@ -80,6 +80,12 @@ void prepICMPPacket();
 void prepEthePacketFwd(uint8_t*, uint8_t*);
 void prepEthePacketBck(uint8_t*);
 
+/*self-defined helper functions in sr_router.c for making new packets*/
+uint8_t * makeNewICMP();
+uint8_t * makeNewARP();
+uint8_t * makeNewIP();
+uint8_t * makeNewMAC();
+
 /* -- sr_if.c -- */
 void sr_add_interface(struct sr_instance* , const char* );
 void sr_set_ether_ip(struct sr_instance* , uint32_t );
