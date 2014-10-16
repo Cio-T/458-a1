@@ -46,7 +46,7 @@ void sr_init(struct sr_instance* sr)
     pthread_t thread;
 
     pthread_create(&thread, &(sr->attr), sr_arpcache_timeout, sr);
-    
+
     /* Add initialization code here! */
 
 } /* -- sr_init -- */
@@ -118,12 +118,12 @@ void sr_handlepacket(struct sr_instance* sr,
         	            /*Forward packet*/
 						uint8_t *dest_mac_addr = next_hop_ip_lookup->mac;
 						prepEthePacketFwd(buf, dest_mac_addr);
-						if (sr_send_packet(sr, buf, len, interface) < 0) 
+						if (sr_send_packet(sr, buf, len, interface) < 0)
 							printf("Error forwarding IP packet reply.");
     	            } else {
         	            struct sr_arpreq *req = sr_arpcache_queuereq(&(sr->cache), next_hop_ip, buf,
                                                               len, interface);
-            	        sr_handle_arpreq(&(sr->cache), req);
+            	        sr_handle_arpreq(sr, req);
    	             	}
 
     	            free(next_hop_ip_lookup);
@@ -139,13 +139,13 @@ void sr_handlepacket(struct sr_instance* sr,
         	   	/*call sr_process_arpreply(struct sr_arpcache *cache,
         	                           unsigned char *mac,
             	                       uint32_t ip);*/
- 	          	sr_process_arpreply(&(sr->cache), arp_buf->ar_sha, arp_buf->ar_sip);
+ 	          	sr_process_arpreply(sr, arp_buf->ar_sha, arp_buf->ar_sip);
    			} else if (ntohs(arp_buf->ar_op) == arp_op_request){/*If the ARP packet is ARP request*/
 				/*COMPLETED*/
    	    	    /*Send ARP reply packet to the sender*/
 				arp_buf->ar_op = htons(arp_op_reply);
 				len = sizeof(struct sr_ethernet_hdr) + sizeof(struct sr_arp_hdr);
-				if (sr_send_packet(sr, buf, len, interface) < 0) 
+				if (sr_send_packet(sr, buf, len, interface) < 0)
 					printf("Error sending ARP reply.");
 				print_hdrs(buf, len);
 	     	} else {
@@ -224,7 +224,7 @@ int packetIsToSelf(struct sr_instance* sr, uint8_t *buf, int isIP, char* if_name
 	int self_flag = 0;
 	unsigned char *tmp_ptr;
 	struct sr_if* get_if;
-	
+
 	if (isIP){
         struct sr_ip_hdr *ip_buf = (struct sr_ip_hdr *)(buf + sizeof(struct sr_ethernet_hdr));
 		get_if = sr->if_list;
@@ -248,7 +248,7 @@ int packetIsToSelf(struct sr_instance* sr, uint8_t *buf, int isIP, char* if_name
 				prepARPPacket(buf, tmp_ptr);
 			}
 		}
-	} 
+	}
     return self_flag;
 }
 
@@ -269,10 +269,10 @@ void prepARPPacket(uint8_t *buf, unsigned char *dest_mac_addr){
 	arp_buf->ar_sip = tmp_ip;
 
 	for (i=0; i<ETHER_ADDR_LEN; ++i){
-		arp_buf->ar_tha[i] = arp_buf->ar_sha[i]; 
+		arp_buf->ar_tha[i] = arp_buf->ar_sha[i];
 		arp_buf->ar_sha[i] = dest_mac_addr[i];
-		ethe_header->ether_shost[i] = arp_buf->ar_sha[i];	
-		ethe_header->ether_dhost[i] = arp_buf->ar_tha[i];	
+		ethe_header->ether_shost[i] = arp_buf->ar_sha[i];
+		ethe_header->ether_dhost[i] = arp_buf->ar_tha[i];
 	}
 }
 
@@ -285,8 +285,8 @@ void prepEthePacketFwd(uint8_t * buf, uint8_t *dest_mac_addr){
 	/*change the src and dest MAC address of buf (prepare to forward)*/
 	int i;
 	for (i=0; i<ETHER_ADDR_LEN; ++i){
-		ethe_header->ether_shost[i] = ethe_header->ether_dhost[i];	
-		ethe_header->ether_dhost[i] = dest_mac_addr[i];	
+		ethe_header->ether_shost[i] = ethe_header->ether_dhost[i];
+		ethe_header->ether_dhost[i] = dest_mac_addr[i];
 	}
 }
 
@@ -296,8 +296,8 @@ void prepEthePacketBck(uint8_t * buf){
 	int i;
 	uint8_t tmp;
 	for (i=0; i<ETHER_ADDR_LEN; ++i){
-		tmp = ethe_header->ether_shost[i];	
-		ethe_header->ether_shost[i] = ethe_header->ether_dhost[i];	
-		ethe_header->ether_dhost[i] = tmp;	
+		tmp = ethe_header->ether_shost[i];
+		ethe_header->ether_shost[i] = ethe_header->ether_dhost[i];
+		ethe_header->ether_dhost[i] = tmp;
 	}
 }

@@ -28,38 +28,48 @@ void sr_arpcache_sweepreqs(struct sr_instance *sr) {
 	}
 }
 
-void sr_handle_arpreq(struct sr_arpcache *cache, struct sr_arpreq *req){
-	time_t now;
-	struct sr_packet *this_pac;
+void sr_handle_arpreq(struct sr_instance* sr, struct sr_arpreq *req){
+    struct sr_arpcache *cache = &(sr->cache);
+	struct sr_packet *this_pac = req->packets;
+	time_t now = time(0);
+    int len;
+    uint8_t * buf;
 
-	now = time(0);
 	if (difftime(now, req->sent) > 1.0){
 		if (req->times_sent >= 5){
 			/*traverse all packets waiting on this reqeust*/
-			this_pac = req->packets;
+			len = sizeof(struct sr_ethernet_hdr) + sizeof(struct sr_ip_hdr) + sizeof(struct sr_icmp_t3_hdr);
 			while (this_pac){
         		/*TO DO: send icmp host unreachable to source addr of this_pac*/
                 /*i.e. send ICMP Destination host unreachable (type 3, code 1)*/
+                buf = makeNewType3ICMP(len, this_pac->buf);
 
+                if (sr_send_packet(sr, this_pac->buf, this_pac->len, this_pac->iface) < 0)
+                    printf("Error sending packets upon receiving ARP reply.");
+                free(buf);
 				this_pac = this_pac->next;
 			}
             sr_arpreq_destroy(cache, req);
 		} else {
             /*TO DO: send arp request*/
+            len = sizeof(struct sr_ethernet_hdr) + sizeof(struct sr_ip_hdr);
+            buf = makeNewARP(len, this_pac->buf);
 
             req->sent = now;
 			++req->times_sent;
+			free(buf);
 		}
 	}
 }
 
 /*function for processing arp reply*/
-void sr_process_arpreply(struct sr_arpcache *cache,
-                                     unsigned char *mac,
-                                     uint32_t ip){
+void sr_process_arpreply(struct sr_instance* sr,
+                                unsigned char *mac,
+                                uint32_t ip){
 
 	struct sr_arpreq *req;
 	struct sr_packet *this_pac;
+	struct sr_arpcache *cache = &(sr->cache);
 
 	req = sr_arpcache_insert(cache, mac, ip);
 	if (req) {
@@ -67,7 +77,9 @@ void sr_process_arpreply(struct sr_arpcache *cache,
 		this_pac = req->packets;
 		while (this_pac){
        		/*TO DO: send all packets on the req->packets linked list*/
-
+            prepEthePacketFwd(this_pac->buf, mac);
+            if (sr_send_packet(sr, this_pac->buf, this_pac->len, this_pac->iface) < 0)
+                printf("Error sending packets upon receiving ARP reply.");
 			this_pac = this_pac->next;
 		}
 		sr_arpreq_destroy(cache, req);

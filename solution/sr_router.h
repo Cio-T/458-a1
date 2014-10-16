@@ -45,7 +45,7 @@ struct sr_instance
 {
     int  sockfd;   /* socket to server */
     char user[32]; /* user name */
-    char host[32]; /* host name */ 
+    char host[32]; /* host name */
     char template[30]; /* template name if any */
     unsigned short topo_id;
     struct sockaddr_in sr_addr; /* address to server */
@@ -81,8 +81,9 @@ void prepEthePacketFwd(uint8_t*, uint8_t*);
 void prepEthePacketBck(uint8_t*);
 
 /*self-defined helper functions in sr_router.c for making new packets*/
-uint8_t * makeNewICMP();
-uint8_t * makeNewARP();
+uint8_t * makeNewICMP(int len);
+uint8_t * makeNewType3ICMP(int len, uint8_t* buf);
+uint8_t * makeNewARP(int len, uint8_t* buf);
 uint8_t * makeNewIP();
 uint8_t * makeNewMAC();
 
