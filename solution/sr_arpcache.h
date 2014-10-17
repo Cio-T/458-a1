@@ -140,10 +140,10 @@ void sr_arpcache_dump(struct sr_arpcache *cache);
 
 void sr_arpcache_sweepreqs(struct sr_instance *sr);
 
-void sr_handle_arpreq(struct sr_arpcache *cache, struct sr_arpreq *req);
+void sr_handle_arpreq(struct sr_instance *sr, struct sr_arpreq *req);
 
 /*tentative function for processing arp reply*/
-void sr_process_arpreply(struct sr_arpcache *cache,
+void sr_process_arpreply(struct sr_instance *sr,
                                      unsigned char *mac,
                                      uint32_t ip);
 

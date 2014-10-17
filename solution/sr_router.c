@@ -84,10 +84,11 @@ void sr_handlepacket(struct sr_instance* sr,
 	uint8_t *buf;
 	buf = (uint8_t *)malloc(len); /*allocate new memory for buf*/
 	memcpy(buf, packet, len); /*let buf be a deep copy of the ethernet packet received*/
-
+	
 	print_hdrs(buf, len);
 
     if (ethertype(buf) == ethertype_ip){/*If the ethernet packet received has protocol IP*/
+
         struct sr_ip_hdr *ip_buf = (struct sr_ip_hdr *)(buf + sizeof(struct sr_ethernet_hdr));
 	    if (validIPPacket(ip_buf)){
 			if (packetIsToSelf(sr, buf, 1, interface)){
@@ -105,8 +106,11 @@ void sr_handlepacket(struct sr_instance* sr,
 
             	if (!best_rt_entry){/*no matching entry in routing table*/
                 	/*send ICMP Destination net unreachable (type 3, code 0)*/
-
+				/*	makeAndSendICMP(icmp3_len, buf, sr, interface, 3, 0);
+				*/
 	            }else{
+					interface = best_rt_entry->interface;
+					prepEthePacket(buf); /*switch the source and dest ethe headers*/
 					prepIPPacket(ip_buf);
 
         	        /*find next hop ip address based on longest prefix match entry in rtable*/
@@ -144,8 +148,7 @@ void sr_handlepacket(struct sr_instance* sr,
 				/*COMPLETED*/
    	    	    /*Send ARP reply packet to the sender*/
 				arp_buf->ar_op = htons(arp_op_reply);
-				len = sizeof(struct sr_ethernet_hdr) + sizeof(struct sr_arp_hdr);
-				if (sr_send_packet(sr, buf, len, interface) < 0)
+				if (sr_send_packet(sr, buf, arp_len, interface) < 0)
 					printf("Error sending ARP reply.");
 				print_hdrs(buf, len);
 	     	} else {
@@ -259,6 +262,7 @@ void prepIPPacket(struct sr_ip_hdr *ip_buf){
 }
 
 void prepARPPacket(uint8_t *buf, unsigned char *dest_mac_addr){
+	printf("dest mac address as received from ARP is %s\n", dest_mac_addr);
 	sr_ethernet_hdr_t *ethe_header = (sr_ethernet_hdr_t *)buf;
     struct sr_arp_hdr *arp_buf = (struct sr_arp_hdr *)(buf + sizeof(struct sr_ethernet_hdr));
 	int i;
@@ -285,19 +289,101 @@ void prepEthePacketFwd(uint8_t * buf, uint8_t *dest_mac_addr){
 	/*change the src and dest MAC address of buf (prepare to forward)*/
 	int i;
 	for (i=0; i<ETHER_ADDR_LEN; ++i){
-		ethe_header->ether_shost[i] = ethe_header->ether_dhost[i];
 		ethe_header->ether_dhost[i] = dest_mac_addr[i];
 	}
 }
 
-void prepEthePacketBck(uint8_t * buf){
+void prepEthePacket(uint8_t * buf){
 	sr_ethernet_hdr_t *ethe_header = (sr_ethernet_hdr_t *)buf;
 	/*change the src and dest MAC address of buf (prepare to send back)*/
 	int i;
-	uint8_t tmp;
 	for (i=0; i<ETHER_ADDR_LEN; ++i){
-		tmp = ethe_header->ether_shost[i];
 		ethe_header->ether_shost[i] = ethe_header->ether_dhost[i];
-		ethe_header->ether_dhost[i] = tmp;
 	}
+}
+
+void sendARPReq(int len, unsigned char* dest_mac_addr, uint32_t next_hop_ip,
+    struct sr_instance* sr, const char* iface){
+
+	/*packet is alway type IP*/
+	uint8_t * buf;
+	buf = (uint8_t *)malloc(len); /*allocate new memory for buf*/
+
+	struct sr_if* out_if = sr_get_interface(sr, iface);
+
+	sr_ethernet_hdr_t *ethe_header = (sr_ethernet_hdr_t *)buf;
+
+	/*to send an arp request*/
+	populateMAC(ethe_header, dest_mac_addr, out_if->addr);
+	ethe_header->ether_type = htons(ethertype_arp);
+
+	struct sr_arp_hdr *arp_header = (struct sr_arp_hdr *)(buf + sizeof(struct sr_ethernet_hdr));
+	populateARP(arp_header, dest_mac_addr, next_hop_ip, out_if->addr, out_if->ip);
+
+	if (sr_send_packet(sr, buf, arp_len, iface) < 0)
+		printf("Error sending ARP request.");
+	print_hdrs(buf, len);
+
+	free(buf);
+
+}
+
+void populateARP(struct sr_arp_hdr* arp_head, unsigned char* dest_mac_addr, 
+		uint32_t next_hop_ip, unsigned char* src_mac_addr, uint32_t src_ip){
+	int i;
+	for (i=0; i<ETHER_ADDR_LEN; ++i){
+		arp_head->ar_tha[i] = dest_mac_addr[i];
+		arp_head->ar_sha[i] = src_mac_addr[i];
+	}
+	arp_head->ar_tip = next_hop_ip;
+	arp_head->ar_sip = src_ip;
+	arp_head->ar_op = htons(arp_op_request);
+
+	arp_head->ar_hrd = htons(1);
+	arp_head->ar_pro = htons(ethertype_ip);
+	arp_head->ar_hln = 6;
+	arp_head->ar_pln = 4;
+}
+
+void populateMAC(sr_ethernet_hdr_t* ethe_head, unsigned char* dest_mac_addr, 
+		unsigned char* src_mac_addr){
+	int i;
+	for (i=0; i<ETHER_ADDR_LEN; ++i){
+		ethe_head->ether_dhost[i] = dest_mac_addr[i];
+		ethe_head->ether_shost[i] = src_mac_addr[i];
+	}
+}
+
+void makeAndSendICMP(int len, uint8_t* packet, struct sr_instance* sr, const char* iface, 
+		uint8_t icmp_type, uint8_t icmp_code){
+
+	/*packet is alway type IP*/
+	uint8_t * buf;
+	buf = (uint8_t *)malloc(len); /*allocate new memory for buf*/
+	memcpy(buf, packet, len); /*let buf be a deep copy of the ethernet packet received*/
+
+	sr_ethernet_hdr_t *ethe_header = (sr_ethernet_hdr_t *)buf;
+
+	if (icmp_type == is_icmp3) {
+
+	} else {
+		printf("Error: self-made packet type unrecognized\n");
+	} 
+	
+	if (sr_send_packet(sr, buf, len, iface) < 0)
+		printf("Error sending Hand-made packet.");
+
+	free(buf);
+}
+
+void populateICMP(struct sr_icmp_hdr* icmp_head){
+
+}
+
+void populateType3ICMP(struct sr_icmp_t3_hdr* icmp3_head){
+
+}
+
+void populateIP(struct sr_ip_hdr* ip_head, struct sr_ip_hdr* ip_buf){
+
 }

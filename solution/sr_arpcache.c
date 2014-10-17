@@ -11,6 +11,8 @@
 #include "sr_if.h"
 #include "sr_protocol.h"
 
+unsigned char broadcast_addr[ETHER_ADDR_LEN] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};	 
+
 /*
   This function gets called every second. For each request sent out, we keep
   checking whether we should resend an request or destroy the arp request.
@@ -23,7 +25,7 @@ void sr_arpcache_sweepreqs(struct sr_instance *sr) {
 	/*Since handle_arpreq destroys current request on time out, save the next
 	 pointer before calling handle_arpreq when traversing through sr_arpreq.*/
 		next = this->next;
-    	sr_handle_arpreq(&(sr->cache), this);
+    	sr_handle_arpreq(sr, this);
 		this = next;
 	}
 }
@@ -32,32 +34,23 @@ void sr_handle_arpreq(struct sr_instance* sr, struct sr_arpreq *req){
     struct sr_arpcache *cache = &(sr->cache);
 	struct sr_packet *this_pac = req->packets;
 	time_t now = time(0);
-    int len;
-    uint8_t * buf;
 
 	if (difftime(now, req->sent) > 1.0){
 		if (req->times_sent >= 5){
 			/*traverse all packets waiting on this reqeust*/
-			len = sizeof(struct sr_ethernet_hdr) + sizeof(struct sr_ip_hdr) + sizeof(struct sr_icmp_t3_hdr);
 			while (this_pac){
         		/*TO DO: send icmp host unreachable to source addr of this_pac*/
                 /*i.e. send ICMP Destination host unreachable (type 3, code 1)*/
-                buf = makeNewType3ICMP(len, this_pac->buf);
-
-                if (sr_send_packet(sr, this_pac->buf, this_pac->len, this_pac->iface) < 0)
-                    printf("Error sending packets upon receiving ARP reply.");
-                free(buf);
+		/*		makeAndSendICMP(icmp3_len, this_pac->buf, sr, this_pac->iface, 3, 1);
+*/	
 				this_pac = this_pac->next;
 			}
             sr_arpreq_destroy(cache, req);
 		} else {
             /*TO DO: send arp request*/
-            len = sizeof(struct sr_ethernet_hdr) + sizeof(struct sr_ip_hdr);
-            buf = makeNewARP(len, this_pac->buf);
-
+			sendARPReq(arp_len, broadcast_addr, req->ip, sr, this_pac->iface);
             req->sent = now;
 			++req->times_sent;
-			free(buf);
 		}
 	}
 }
