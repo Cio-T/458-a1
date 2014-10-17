@@ -418,3 +418,19 @@ void revIPPacket(struct sr_ip_hdr* ip_buf){
     ip_buf->ip_src = ip_buf->ip_dst;
     ip_buf->ip_dst = tmp;
 }
+
+void populateIP(struct sr_ip_hdr* ip_hdr, uint32_t src_ip_addr){
+
+    ip_hdr->ip_hl = 4; /* header length */
+    ip_hdr->ip_v = 4; /*version*/
+    ip_hdr->ip_tos = 0; /* type of service */
+    ip_hdr->ip_len = htons(ip_head_len + ICMP_DATA_SIZE); /* total length = ip_header lenght + icmp_header lenght + ip header length + 8 bytes of data*/
+    ip_hdr->ip_off = 0;	/* fragment offset field */
+    ip_hdr->ip_ttl = 64;	/*TO DO:Change to 64 time to live */
+    ip_hdr->ip_id = 0;
+    ip_hdr->ip_p = IPPROTO_ICMP;	/* protocol */
+    ip_buf->ip_dst = ip_buf->ip_src;
+    ip_hdr->ip_dst.s_addr = src_ip_addr; /* source and destination address */
+    ip_hdr->ip_sum = calculate_IP_checksum(ip_hdr);
+
+}

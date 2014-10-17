@@ -90,17 +90,23 @@ void revIPPacket(struct sr_ip_hdr* ip_head);
 void sendARPReq(int len, unsigned char* dest_mac_addr, uint32_t next_hop_ip,
 	struct sr_instance* sr, const char* iface);
 void populateARP(struct sr_arp_hdr*, unsigned char*, uint32_t, unsigned char*, uint32_t);
-void populateMAC(sr_ethernet_hdr_t*, unsigned char*, unsigned char*);
+void populateMAC(sr_ethernet_hdr_t*, unsigned char*, usigned char*);
+void populateIP(struct sr_ip_hdr*, uint32_t src_ip_addr);
 
+/*
 enum pac_len {
   arp_len = sizeof(struct sr_ethernet_hdr) + sizeof(struct sr_arp_hdr),
   icmp_len = sizeof(struct sr_ethernet_hdr) + sizeof(struct sr_ip_hdr) + sizeof(struct sr_icmp_t3_hdr),
   icmp3_len = sizeof(struct sr_ethernet_hdr) + sizeof(struct sr_ip_hdr) + sizeof(struct sr_icmp_hdr),
 };
+*/
 
-enum header_len {
-    eth_head_len = sizeof(struct sr_ethernet_hdr),
-    ip_head_len =  eth_head_len + sizeof(struct sr_ip_hdr),
+enum header_length {
+    ETHE_SIZE = sizeof(struct sr_ethernet_hdr),
+    ARP_SIZE = sizeof(struct sr_arp_hdr),
+    IP_SIZE =  sizeof(struct sr_ip_hdr),
+    ICMP_SIZE = sizeof(struct sr_icmp_hdr),
+    ICMP3_SIZE = sizeof(struct sr_icmp_t3_hdr),
 };
 
 /* -- sr_if.c -- */
